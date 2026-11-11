@@ -94,13 +94,10 @@ Ergebnis: `build/app/outputs/bundle/release/app-release.aab`
 
 Der Installer wird automatisch von GitHub Actions gebaut (`.github/workflows/windows.yml`):
 
-- **Jeder Push auf `main`** → Reiter *Actions* → letzter Lauf → Artefakt *Werwolf-Blutmond-Windows-Installer*.
-- **Neue Version veröffentlichen:** Version in `pubspec.yaml` erhöhen und einen Tag pushen:
-  ```bash
-  git tag v1.0.1
-  git push origin v1.0.1
-  ```
-  Der Installer erscheint dann unter *Releases* zum Download.
+- **Direkter Download der neuesten Version:**
+  <https://github.com/leonardomissiha24-pixel/Werwolf/releases/latest/download/Werwolf-Blutmond-Setup.exe>
+- Jeder Push auf `main` baut den Installer neu und legt ihn ins Release `v<version>` (Version aus `pubspec.yaml`).
+  Für eine neue Version einfach `version:` in `pubspec.yaml` erhöhen.
 
 Hinweise:
 - Windows nutzt in Firebase die Konfiguration einer **Web-App**: in der Firebase-Konsole zusätzlich eine

@@ -1,8 +1,9 @@
 name: Windows-Installer
 
 # Baut die Windows-App und den Installer (.exe).
-# - Bei jedem Push auf main: Installer als Artefakt der Action herunterladbar.
-# - Bei einem Tag v* (z. B. v1.0.0): zusätzlich als GitHub-Release veröffentlicht.
+# Bei jedem Push auf main (und bei Tags v*) wird der Installer als GitHub-Release
+# "v<version aus pubspec.yaml>" veröffentlicht. Fester Download-Link:
+# https://github.com/<besitzer>/Werwolf/releases/latest/download/Werwolf-Blutmond-Setup.exe
 on:
   push:
     branches: [main]
@@ -62,10 +63,13 @@ jobs:
           path: build/installer/*.exe
 
       - name: GitHub-Release veröffentlichen
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: Werwolf Blutmond ${{ github.ref_name }}
+          tag_name: v${{ env.APP_VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: Werwolf Blutmond v${{ env.APP_VERSION }}
+          make_latest: true
+          overwrite_files: true
           files: build/installer/*.exe
           body: |
             **Windows 11 / 10 (64 Bit):** `Werwolf-Blutmond-Setup-….exe` herunterladen und ausführen.
