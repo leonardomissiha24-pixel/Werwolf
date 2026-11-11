@@ -7,6 +7,8 @@ import 'services/room_repository.dart';
 import 'theme.dart';
 import 'ui/screens/home_screen.dart';
 
+const kServerNotConfigured = 'SERVER_NOT_CONFIGURED';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
@@ -20,11 +22,16 @@ Future<void> main() async {
   ));
 
   String? initError;
-  try {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-    await RoomRepository.instance.ensureSignedIn();
-  } catch (e) {
-    initError = '$e';
+  final setupMissing = DefaultFirebaseOptions.currentPlatform.projectId == 'dein-firebase-projekt';
+  if (setupMissing) {
+    initError = kServerNotConfigured;
+  } else {
+    try {
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+      await RoomRepository.instance.ensureSignedIn();
+    } catch (e) {
+      initError = '$e';
+    }
   }
   runApp(WerwolfApp(initError: initError));
 }

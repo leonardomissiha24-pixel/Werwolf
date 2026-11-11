@@ -143,8 +143,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         margin: const EdgeInsets.only(bottom: 18),
                         decoration: BoxDecoration(border: Border.all(color: AppColors.blood)),
                         child: Text(
-                          'Keine Verbindung zum Server. Prüfe die Internetverbindung '
-                          'bzw. die Firebase-Konfiguration.\n\n${widget.initError}',
+                          widget.initError == 'SERVER_NOT_CONFIGURED'
+                              ? 'Der Spielserver ist noch nicht eingerichtet.\n\n'
+                                  'Dein Internet funktioniert – in dieser Version fehlen nur noch die '
+                                  'Firebase-Zugangsdaten. Sobald sie eingetragen sind, kann gespielt werden.'
+                              : 'Keine Verbindung zum Spielserver. Prüfe deine Internetverbindung.\n\n'
+                                  '${widget.initError}',
                           style: const TextStyle(color: AppColors.ash),
                         ),
                       ),
