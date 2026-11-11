@@ -1,0 +1,57 @@
+rules_version = '2';
+
+// Sicherheitsregeln für Werwolf: Blutmond.
+// Jeder Client meldet sich anonym an. Der Gastgeber (hostId) ist der
+// Spielleiter und der einzige, der Rollen und Spielzustand schreiben darf.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function roomData(code) { return get(/databases/$(database)/documents/rooms/$(code)).data; }
+    function isHost(code) { return signedIn() && roomData(code).hostId == request.auth.uid; }
+
+    match /rooms/{code} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.hostId == request.auth.uid
+        && request.resource.data.phase == 'lobby';
+      allow update, delete: if isHost(code);
+
+      // Öffentliche Spielerdaten
+      match /players/{uid} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.auth.uid == uid
+          && roomData(code).phase == 'lobby'
+          && request.resource.data.alive == true
+          && !('role' in request.resource.data)
+          && request.resource.data.mayor == false
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 16;
+        // Spieler dürfen nur ihren Namen und ihren Verbindungsstempel ändern.
+        allow update: if isHost(code) || (request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'stamp']));
+        allow delete: if isHost(code) || request.auth.uid == uid;
+      }
+
+      // Geheimes Wissen: nur der Spieler selbst (und der Spielleiter)
+      match /secrets/{uid} {
+        allow read: if signedIn() && (request.auth.uid == uid || isHost(code));
+        allow write: if isHost(code);
+      }
+
+      // Aktionen (Stimmen, Nachtaktionen): nur selbst schreiben
+      match /actions/{uid} {
+        allow read: if signedIn() && (request.auth.uid == uid || isHost(code));
+        allow write: if signedIn() && request.auth.uid == uid;
+        allow delete: if isHost(code);
+      }
+
+      // WebRTC-Signalisierung
+      match /signals/{id} {
+        allow create: if signedIn() && request.resource.data.from == request.auth.uid;
+        allow read, delete: if signedIn()
+          && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
+      }
+    }
+  }
+}
