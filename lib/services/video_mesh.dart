@@ -327,7 +327,12 @@ class VideoMesh extends ChangeNotifier {
 
   Future<void> switchCamera() async {
     final t = _local?.getVideoTracks().firstOrNull;
-    if (t != null) await Helper.switchCamera(t);
+    if (t == null) return;
+    try {
+      await Helper.switchCamera(t);
+    } catch (e) {
+      debugPrint('switchCamera: $e'); // z. B. am PC mit nur einer Webcam
+    }
   }
 
   @override

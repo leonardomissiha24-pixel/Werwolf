@@ -7,16 +7,19 @@ class Narrator {
   bool _ready = false;
 
   Future<void> init() async {
-    try {
-      await _tts.setLanguage('de-DE');
-      await _tts.setPitch(0.62);
-      await _tts.setSpeechRate(0.40);
-      await _tts.setVolume(1.0);
-      await _tts.awaitSpeakCompletion(false);
-      _ready = true;
-    } catch (_) {
-      _ready = false;
+    // Einzeln absichern: Unter Windows fehlt evtl. eine deutsche Stimme
+    // oder eine Einstellung wird nicht unterstützt – vorlesen soll trotzdem gehen.
+    Future<void> attempt(Future<dynamic> Function() f) async {
+      try {
+        await f();
+      } catch (_) {}
     }
+
+    await attempt(() => _tts.setLanguage('de-DE'));
+    await attempt(() => _tts.setPitch(0.62));
+    await attempt(() => _tts.setSpeechRate(0.40));
+    await attempt(() => _tts.setVolume(1.0));
+    _ready = true;
   }
 
   Future<void> say(String text) async {

@@ -4,6 +4,8 @@ Online-Werwolf für Android mit Live-Video: Jeder spielt auf dem eigenen Handy,
 alle sehen und hören sich über die Kamera. Nachts erlöschen die Bilder – nur die
 Werwölfe sehen und hören einander. Eine düstere Erzählerstimme führt durch die Nacht.
 
+**Plattformen:** Android (Play Store) und Windows 10/11 (Installer).
+
 **Technik:** Flutter · Firebase (anonyme Anmeldung + Cloud Firestore) · WebRTC (direkte Video-Verbindungen zwischen allen Spielern, 5–12 Spieler)
 
 ## Rollen
@@ -88,6 +90,29 @@ Ergebnis: `build/app/outputs/bundle/release/app-release.aab`
 
 ---
 
+## Windows-Installer
+
+Der Installer wird automatisch von GitHub Actions gebaut (`.github/workflows/windows.yml`):
+
+- **Jeder Push auf `main`** → Reiter *Actions* → letzter Lauf → Artefakt *Werwolf-Blutmond-Windows-Installer*.
+- **Neue Version veröffentlichen:** Version in `pubspec.yaml` erhöhen und einen Tag pushen:
+  ```bash
+  git tag v1.0.1
+  git push origin v1.0.1
+  ```
+  Der Installer erscheint dann unter *Releases* zum Download.
+
+Hinweise:
+- Windows nutzt in Firebase die Konfiguration einer **Web-App**: in der Firebase-Konsole zusätzlich eine
+  Web-App anlegen bzw. `flutterfire configure --platforms=android,windows` ausführen.
+- Der Installer ist nicht signiert, deshalb warnt SmartScreen beim ersten Start
+  („Weitere Informationen“ → „Trotzdem ausführen“). Für eine Signatur braucht man ein Code-Signing-Zertifikat.
+- Kamera am PC: *Einstellungen → Datenschutz & Sicherheit → Kamera → „Desktop-Apps Zugriff erlauben“* muss an sein.
+- Lokal bauen (auf Windows mit Visual Studio 2022 + „Desktopentwicklung mit C++“):
+  `flutter build windows --release`, dann `installer\werwolf.iss` mit Inno Setup 6 kompilieren.
+
+---
+
 ## Projektstruktur
 ```
 lib/
@@ -104,6 +129,9 @@ lib/
   ui/widgets/                  Nebel/Mond, Videokacheln, Rollenkarte
 test/engine_test.dart          simuliert >80 komplette Partien mit Bots
 firestore.rules                Sicherheitsregeln
+windows/                       Windows-Runner (Fenster, Icon)
+installer/werwolf.iss          Inno-Setup-Skript für den Installer
+.github/workflows/windows.yml  baut den Windows-Installer automatisch
 ```
 
 ## Bekannte Grenzen

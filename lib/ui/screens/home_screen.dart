@@ -50,7 +50,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _permissions() async {
-    await [Permission.camera, Permission.microphone].request();
+    try {
+      await [Permission.camera, Permission.microphone].request();
+    } catch (_) {
+      // Am PC fragt Windows selbst beim ersten Kamerazugriff.
+    }
   }
 
   Future<void> _create() async {

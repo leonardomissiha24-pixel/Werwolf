@@ -1,0 +1,72 @@
+name: Windows-Installer
+
+# Baut die Windows-App und den Installer (.exe).
+# - Bei jedem Push auf main: Installer als Artefakt der Action herunterladbar.
+# - Bei einem Tag v* (z. B. v1.0.0): zusätzlich als GitHub-Release veröffentlicht.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.50.0
+          cache: true
+
+      - name: Abhängigkeiten
+        run: flutter pub get
+
+      - name: Spiellogik testen
+        run: flutter test test/engine_test.dart
+
+      - name: Windows-App bauen
+        run: flutter build windows --release
+
+      - name: Visual-C++-Laufzeit beilegen
+        shell: pwsh
+        run: |
+          $dst = "build/windows/x64/runner/Release"
+          foreach ($f in "msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll") {
+            Copy-Item "C:\Windows\System32\$f" $dst
+          }
+
+      - name: Version aus pubspec.yaml lesen
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value
+          "APP_VERSION=$v" >> $env:GITHUB_ENV
+
+      - name: Installer erstellen (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DMyAppVersion=$env:APP_VERSION" installer\werwolf.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Installer als Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: Werwolf-Blutmond-Windows-Installer
+          path: build/installer/*.exe
+
+      - name: GitHub-Release veröffentlichen
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Werwolf Blutmond ${{ github.ref_name }}
+          files: build/installer/*.exe
+          body: |
+            **Windows 11 / 10 (64 Bit):** `Werwolf-Blutmond-Setup-….exe` herunterladen und ausführen.
+            Windows SmartScreen warnt bei unsignierten Programmen: „Weitere Informationen“ → „Trotzdem ausführen“.
