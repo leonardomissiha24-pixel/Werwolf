@@ -53,3 +53,6 @@ app.*.map.json
 *.keystore
 /test/screens/out/
 /android/build/
+
+# Download-Archive
+*.zip
