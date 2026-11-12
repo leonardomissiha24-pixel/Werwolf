@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/game_state.dart';
 import '../models/roles.dart';
+import '../net/host_store.dart';
 
 class _Pending {
   _Pending(this.type, this.uid);
@@ -15,24 +15,18 @@ class _Pending {
 }
 
 /// Der Spielleiter. Läuft ausschließlich auf dem Gerät des Gastgebers und ist
-/// die einzige Instanz, die Rollen kennt und den Spielablauf in Firestore schreibt.
+/// die einzige Instanz, die Rollen kennt und den Spielablauf fortschreibt.
 class GameEngine {
-  GameEngine(this.code, {FirebaseFirestore? db, this.timeScale = 1.0, Random? random})
-      : _db = db ?? FirebaseFirestore.instance,
-        _rnd = random ?? Random();
+  GameEngine(this.store, {this.timeScale = 1.0, Random? random}) : _rnd = random ?? Random();
 
-  final String code;
-  final FirebaseFirestore _db;
+  final HostStore store;
+
+  /// Kennung dieser Partie – hält Aktionen verschiedener Partien auseinander.
+  late final String _gid = 'g${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
   final Random _rnd;
 
   /// Nur für Tests: verkürzt alle Wartezeiten.
   final double timeScale;
-
-  DocumentReference<Map<String, dynamic>> get _room => _db.collection('rooms').doc(code);
-  DocumentReference<Map<String, dynamic>> _secret(String uid) =>
-      _room.collection('secrets').doc(uid);
-  DocumentReference<Map<String, dynamic>> _player(String uid) =>
-      _room.collection('players').doc(uid);
 
   // ---- Spielzustand (nur im Speicher des Gastgebers) ----
   final Map<String, Role> _roles = {};
@@ -106,83 +100,32 @@ class GameEngine {
       _alive.add(p.uid);
     }
 
-    await _clearCollection('actions');
-    await _clearCollection('secrets');
+    store.clearActions();
+    store.clearSecrets();
 
     final wolves = _roles.entries.where((e) => e.value.isWolf).map((e) => e.key).toList();
-    final batch = _db.batch();
     for (final uid in _roles.keys) {
-      batch.set(_secret(uid), {
+      store.mergeSecret(uid, {
         'role': _roles[uid]!.id,
         if (_roles[uid]!.isWolf) 'wolves': wolves,
-        'expiresAt': _expires,
       });
-      batch.update(_player(uid), {
+      store.updatePlayer(uid, {
         'alive': true,
-        'role': FieldValue.delete(),
+        'role': null,
         'mayor': false,
         'canVote': true,
         'lover': false,
       });
     }
-    await batch.commit();
 
-    _sub = _room.collection('actions').snapshots().listen((q) {
-      _actions = {for (final d in q.docs) d.id: d.data()};
+    _sub = store.actionStream.listen((all) {
+      _actions = {for (final e in all.entries) e.key: e.value};
       _onActionsChanged();
       _poke();
     });
 
     _done = _loop();
     unawaited(_done);
-  }
-
-  Timestamp get _expires =>
-      Timestamp.fromMillisecondsSinceEpoch(DateTime.now().add(const Duration(days: 1)).millisecondsSinceEpoch);
-
-  Future<void> _clearCollection(String name) async {
-    final q = await _room.collection(name).get();
-    final batch = _db.batch();
-    for (final d in q.docs) {
-      batch.delete(d.reference);
-    }
-    await batch.commit();
-  }
-
-  /// Setzt den Raum nach Spielende zurück in die Lobby.
-  static Future<void> resetToLobby(String code, {FirebaseFirestore? firestore}) async {
-    final db = firestore ?? FirebaseFirestore.instance;
-    final room = db.collection('rooms').doc(code);
-    final batch = db.batch();
-    for (final c in ['actions', 'secrets']) {
-      final q = await room.collection(c).get();
-      for (final d in q.docs) {
-        batch.delete(d.reference);
-      }
-    }
-    final players = await room.collection('players').get();
-    for (final d in players.docs) {
-      batch.update(d.reference, {
-        'alive': true,
-        'role': FieldValue.delete(),
-        'mayor': false,
-        'canVote': true,
-        'lover': false,
-      });
-    }
-    batch.update(room, {
-      'phase': Phase.lobby,
-      'step': null,
-      'round': 0,
-      'endsAt': null,
-      'narration': '',
-      'actionKey': '',
-      'actor': null,
-      'winner': null,
-      'winners': [],
-      'tally': {},
-    });
-    await batch.commit();
   }
 
   // =====================================================================
@@ -263,14 +206,14 @@ class GameEngine {
       if (_disposed) return;
       if (!_stepActive(step)) continue;
       final actors = _actorsFor(step);
-      final key = 'r$_round-${step.id}';
+      final key = '$_gid-r$_round-${step.id}';
 
       if (step == NightStep.werwoelfe) await _prepareWolfNight();
       if (step == NightStep.hexe) {
         for (final w in _aliveWith((r) => r == Role.hexe)) {
-          await _secret(w).set({
+          store.mergeSecret(w, {
             'witch': {'victim': wolfTarget, 'healUsed': _healUsed, 'poisonUsed': _poisonUsed},
-          }, SetOptions(merge: true));
+          });
         }
       }
 
@@ -299,19 +242,19 @@ class GameEngine {
           }
           _lover1 = l1 as String;
           _lover2 = l2 as String;
-          await _secret(_lover1!).set({'lover': _lover2}, SetOptions(merge: true));
-          await _secret(_lover2!).set({'lover': _lover1}, SetOptions(merge: true));
+          store.mergeSecret(_lover1!, {'lover': _lover2});
+          store.mergeSecret(_lover2!, {'lover': _lover1});
         case NightStep.beschuetzer:
           final t = cur[actors.first]?['target'];
           protectedNow = (_validAlive(t) && t != _protectedLast) ? t as String : null;
           _protectedLast = protectedNow;
-          await _secret(actors.first).set({'protectedLast': protectedNow}, SetOptions(merge: true));
+          store.mergeSecret(actors.first, {'protectedLast': protectedNow});
         case NightStep.seherin:
           final t = cur[actors.first]?['target'];
           if (_validAlive(t)) {
-            await _secret(actors.first).set({
+            store.mergeSecret(actors.first, {
               'seen': {t as String: _roles[t]!.id},
-            }, SetOptions(merge: true));
+            });
             await _wait(5); // Zeit, die Vision zu lesen
           }
         case NightStep.werwoelfe:
@@ -334,9 +277,9 @@ class GameEngine {
             poisonTarget = p as String;
             _poisonUsed = true;
           }
-          await _secret(actors.first).set({
+          store.mergeSecret(actors.first, {
             'witch': {'victim': null, 'healUsed': _healUsed, 'poisonUsed': _poisonUsed},
-          }, SetOptions(merge: true));
+          });
       }
     }
     if (_disposed) return;
@@ -378,14 +321,12 @@ class GameEngine {
       for (final g in ghosts) g: 'video',
     };
     _lastPackJson = '';
-    final batch = _db.batch();
     for (final w in wolves) {
-      batch.set(_secret(w), {'audience': audience, 'pack': {}, 'wolves': wolves}, SetOptions(merge: true));
+      store.mergeSecret(w, {'audience': audience, 'pack': <String, String>{}, 'wolves': wolves});
     }
     for (final g in girls) {
-      batch.set(_secret(g), {'peek': [...wolves]..shuffle(_rnd)}, SetOptions(merge: true));
+      store.mergeSecret(g, {'peek': [...wolves]..shuffle(_rnd)});
     }
-    await batch.commit();
   }
 
   /// Mehrheitsentscheid. Gleichstand → Zufall unter den Führenden.
@@ -421,19 +362,16 @@ class GameEngine {
       }
     }
     if (result.isEmpty) return result;
-
-    final batch = _db.batch();
     final allRoles = {for (final e in _roles.entries) e.key: e.value.id};
     for (final (u, _) in result) {
-      batch.update(_player(u), {'alive': false, 'role': _roles[u]!.id, 'mayor': false});
-      batch.set(_secret(u), {'ghost': true, 'allRoles': allRoles}, SetOptions(merge: true));
+      store.updatePlayer(u, {'alive': false, 'role': _roles[u]!.id, 'mayor': false});
+      store.mergeSecret(u, {'ghost': true, 'allRoles': allRoles});
       if (_roles[u] == Role.jaeger) _pending.add(_Pending(Phase.hunter, u));
       if (_mayor == u) {
         _mayor = null;
         _pending.add(_Pending(Phase.successor, u));
       }
     }
-    await batch.commit();
     return result;
   }
 
@@ -442,7 +380,7 @@ class GameEngine {
       final p = _pending.removeAt(0);
       if (_alive.isEmpty) return;
       if (p.type == Phase.hunter) {
-        final key = 'r$_round-hunter-${p.uid}';
+        final key = '$_gid-r$_round-hunter-${p.uid}';
         await _setPhase(Phase.hunter,
             narration:
                 '${_names[p.uid]} war der Jäger. Mit dem letzten Atemzug hebt er die Flinte …',
@@ -463,7 +401,7 @@ class GameEngine {
         }
         await _wait(8);
       } else {
-        final key = 'r$_round-successor';
+        final key = '$_gid-r$_round-successor';
         await _setPhase(Phase.successor,
             narration:
                 'Der Bürgermeister ist tot. Mit letzter Kraft bestimmt er, wer sein Amt erbt.',
@@ -483,13 +421,13 @@ class GameEngine {
 
   Future<void> _setMayor(String uid) async {
     _mayor = uid;
-    await _player(uid).update({'mayor': true});
+    store.updatePlayer(uid, {'mayor': true});
   }
 
   // ---------------------------------------------------------------- Tag
 
   Future<void> _mayorElection() async {
-    final key = 'r$_round-mayor';
+    final key = '$_gid-r$_round-mayor';
     await _setPhase(Phase.mayorElection,
         narration:
             'Das Dorf braucht eine Stimme, die schwerer wiegt. Wählt euren Bürgermeister.',
@@ -516,7 +454,7 @@ class GameEngine {
     await _wait(_dayDuration);
     if (_disposed) return;
 
-    final key = 'r$_round-vote';
+    final key = '$_gid-r$_round-vote';
     final voters = _alive.where((u) => !_silenced.contains(u)).toList();
     await _setPhase(Phase.vote,
         narration: 'Die Zeit des Redens ist vorbei. Zeigt mit dem Finger auf den Schuldigen.',
@@ -541,7 +479,7 @@ class GameEngine {
     }
     if (_roles[victim] == Role.dorfdepp && !_silenced.contains(victim)) {
       _silenced.add(victim);
-      await _player(victim).update({'role': Role.dorfdepp.id, 'canVote': false});
+      store.updatePlayer(victim, {'role': Role.dorfdepp.id, 'canVote': false});
       await _setPhase(Phase.dawn,
           narration:
               'Als der Strick sich spannt, erkennt das Dorf ${_names[victim]}: den Dorfdepp. Man lässt ihn laufen – doch seine Stimme zählt nicht mehr.',
@@ -590,16 +528,14 @@ class GameEngine {
       Winner.lovers => [_lover1!, _lover2!],
       _ => <String>[],
     };
-    final batch = _db.batch();
     for (final u in _roles.keys) {
-      batch.update(_player(u), {
+      store.updatePlayer(u, {
         'role': _roles[u]!.id,
         'lover': u == _lover1 || u == _lover2,
       });
     }
-    await batch.commit();
     _phase = Phase.end;
-    await _room.update({
+    store.updateRoom({
       'phase': Phase.end,
       'step': null,
       'endsAt': null,
@@ -627,7 +563,7 @@ class GameEngine {
     _step = step;
     _key = key;
     _lastTallyJson = '';
-    await _room.update({
+    store.updateRoom({
       'phase': phase,
       'step': step?.id,
       'round': _round,
@@ -652,7 +588,7 @@ class GameEngine {
       if (json != _lastPackJson) {
         _lastPackJson = json;
         for (final w in _aliveWith((r) => r.isWolf)) {
-          _secret(w).set({'pack': pack}, SetOptions(merge: true));
+          store.mergeSecret(w, {'pack': pack});
         }
       }
     }
@@ -669,7 +605,7 @@ class GameEngine {
       final json = jsonEncode(tally);
       if (json != _lastTallyJson) {
         _lastTallyJson = json;
-        _room.update({'tally': tally});
+        store.updateRoom({'tally': tally});
       }
     }
   }

@@ -6,7 +6,19 @@ Werwölfe sehen und hören einander. Eine düstere Erzählerstimme führt durch 
 
 **Plattformen:** Android (Play Store) und Windows 10/11 (Installer).
 
-**Technik:** Flutter · Firebase (anonyme Anmeldung + Cloud Firestore) · WebRTC (direkte Video-Verbindungen zwischen allen Spielern, 5–12 Spieler)
+**Technik:** Flutter · WebRTC (direkte Video-Verbindungen zwischen allen Spielern, 5–12 Spieler) ·
+öffentliche MQTT-Vermittlungsserver zum Finden der Geräte – **kein Konto, kein eigener Server, keine Einrichtung nötig.**
+
+## Wie sich die Geräte finden
+Das Gerät des Spielleiters hält den Spielzustand und verteilt ihn über einen öffentlichen
+Vermittlungsserver (Liste in `lib/config.dart`, die App probiert sie der Reihe nach durch).
+Alles wird vorher auf dem Gerät verschlüsselt (AES-256-GCM, Schlüssel aus dem Dorfcode);
+Rollen und Nachtaktionen zusätzlich mit einem Schlüssel, den nur Spielleiter und der jeweilige
+Spieler kennen (X25519). Bild und Ton laufen nie über diese Server, sondern direkt von Gerät zu Gerät.
+
+Grenzen: Die öffentlichen Server sind kostenlose Gemeinschaftsdienste ohne Ausfallgarantie.
+Für eine große Nutzerzahl im Play Store sollte in `lib/config.dart` ein eigener MQTT-Server
+(z. B. Mosquitto auf einem kleinen Server) eingetragen werden.
 
 ## Rollen
 Werwolf · Weißer Werwolf · Dorfbewohner · Seherin · Hexe · Jäger · Amor · Beschützer ·
@@ -28,33 +40,17 @@ Die Freigabe wird auf **Senderseite** gesteuert (`replaceTrack`): Ein Bild, das 
 
 ### 1. Werkzeuge
 - [Flutter](https://docs.flutter.dev/get-started/install) (stabil, ≥ 3.50) und Android Studio bzw. Android SDK (Plattform 37)
-- `npm install -g firebase-tools` und `dart pub global activate flutterfire_cli`
 
-### 2. Firebase einrichten (kostenloser Spark-Tarif reicht)
-1. Projekt anlegen auf <https://console.firebase.google.com>.
-2. **Authentication → Anmeldemethode → Anonym** aktivieren.
-3. **Firestore Database → Datenbank erstellen** (Standort `europe-west3` Frankfurt).
-4. Im Projektordner:
-   ```bash
-   firebase login
-   flutterfire configure --platforms=android --android-package-name=de.blutmond.werwolf
-   firebase use --add          # dein Projekt wählen
-   firebase deploy --only firestore:rules
-   ```
-   `flutterfire configure` überschreibt `lib/firebase_options.dart` mit deinen echten Werten.
-5. Optional, aber empfohlen: **Firestore → TTL-Richtlinien** für das Feld `expiresAt` in den
-   Sammlungsgruppen `rooms`, `players`, `secrets`, `actions` anlegen → alte Spiele löschen sich nach 24 h.
-
-### 3. TURN-Server (wichtig für Mobilfunk)
+### 2. TURN-Server (wichtig für Mobilfunk)
 Im WLAN reichen die eingetragenen STUN-Server. Im Mobilfunknetz scheitern direkte
 Verbindungen oft – dann braucht es einen TURN-Server. Trage ihn in `lib/config.dart` ein
 (eigener [coturn](https://github.com/coturn/coturn) oder z. B. Metered / Cloudflare Calls / Twilio).
 
-### 4. App-ID festlegen
+### 3. App-ID festlegen
 Die Paketkennung ist `de.blutmond.werwolf` (in `android/app/build.gradle.kts`).
 Ändere sie **vor** dem ersten Upload, falls du eine eigene willst – danach ist sie fest.
 
-### 5. Signaturschlüssel erzeugen
+### 4. Signaturschlüssel erzeugen
 ```bash
 keytool -genkey -v -keystore ~/werwolf-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
 ```
@@ -67,7 +63,7 @@ storeFile=/pfad/zu/werwolf-upload.jks
 ```
 Schlüssel und Passwort sicher aufbewahren!
 
-### 6. Bauen
+### 5. Bauen
 ```bash
 flutter pub get
 flutter test
@@ -75,7 +71,7 @@ flutter build appbundle --release
 ```
 Ergebnis: `build/app/outputs/bundle/release/app-release.aab`
 
-### 7. Google Play Console
+### 6. Google Play Console
 1. Entwicklerkonto (einmalig 25 $) auf <https://play.google.com/console>.
 2. App erstellen → AAB hochladen (zuerst „Interner Test“).
 3. Store-Eintrag: Icon `store/icon_512.png`, Feature-Grafik `store/feature_graphic_1024x500.png`,
@@ -83,7 +79,7 @@ Ergebnis: `build/app/outputs/bundle/release/app-release.aab`
 4. **Datenschutzerklärung:** `docs/datenschutz.html` ausfüllen ([PLATZHALTER]) und öffentlich hosten
    (z. B. GitHub Pages), URL eintragen.
 5. **Datensicherheit:** Erhoben werden *Fotos/Videos & Audio* (nur übertragen, nicht gespeichert,
-   verschlüsselt), *Name* (Spielername) und *App-Interaktionen*; keine Weitergabe, keine Werbung.
+   verschlüsselt), *Name* (Spielername); keine Weitergabe, keine Werbung.
 6. Inhaltsbewertung: Fantasy-Gewalt; die App hat **Live-Kommunikation zwischen Nutzern** → angeben.
 7. **Neue Privatkonten:** Google verlangt vor dem Produktions-Release einen geschlossenen Test mit
    mind. 12 Testern über 14 Tage.
@@ -100,8 +96,6 @@ Der Installer wird automatisch von GitHub Actions gebaut (`.github/workflows/win
   Für eine neue Version einfach `version:` in `pubspec.yaml` erhöhen.
 
 Hinweise:
-- Windows nutzt in Firebase die Konfiguration einer **Web-App**: in der Firebase-Konsole zusätzlich eine
-  Web-App anlegen bzw. `flutterfire configure --platforms=android,windows` ausführen.
 - Der Installer ist nicht signiert, deshalb warnt SmartScreen beim ersten Start
   („Weitere Informationen“ → „Trotzdem ausführen“). Für eine Signatur braucht man ein Code-Signing-Zertifikat.
 - Kamera am PC: *Einstellungen → Datenschutz & Sicherheit → Kamera → „Desktop-Apps Zugriff erlauben“* muss an sein.
@@ -113,19 +107,20 @@ Hinweise:
 ## Projektstruktur
 ```
 lib/
-  main.dart                    Start, Firebase-Init
-  config.dart                  STUN/TURN-Server, Mindestspielerzahl
+  main.dart                    Start
+  config.dart                  Vermittlungsserver, STUN/TURN-Server, Mindestspielerzahl
   theme.dart                   Farben & Schriften (Cinzel, Cormorant Garamond)
   models/roles.dart            Rollen, Nachtschritte, Phasen, Sieg-Texte
-  models/game_state.dart       Firestore-Datenmodelle
+  models/game_state.dart       Datenmodelle (Raum, Spieler, Geheimnisse)
   services/game_engine.dart    Spielleiter-Logik (läuft beim Gastgeber)
   services/video_mesh.dart     WebRTC-Netz + Sichtbarkeitsregeln
-  services/room_repository.dart  Räume beitreten/erstellen, Aktionen
+  services/room_repository.dart  Dorf gründen/beitreten, Verteilung des Spielzustands
+  net/                         Transport (MQTT), Verschlüsselung, Spielzustand des Spielleiters
   services/narrator.dart       Erzählerstimme (Text-to-Speech)
   ui/screens/                  Start, Spielraum, Regeln
   ui/widgets/                  Nebel/Mond, Videokacheln, Rollenkarte
 test/engine_test.dart          simuliert >80 komplette Partien mit Bots
-firestore.rules                Sicherheitsregeln
+test/network_test.dart         ganze Partien über die Netzwerkschicht inkl. Lauschangriff
 windows/                       Windows-Runner (Fenster, Icon)
 installer/werwolf.iss          Inno-Setup-Skript für den Installer
 .github/workflows/windows.yml  baut den Windows-Installer automatisch
@@ -133,5 +128,6 @@ installer/werwolf.iss          Inno-Setup-Skript für den Installer
 
 ## Bekannte Grenzen
 - Der Gastgeber ist der Spielleiter: Schließt er die App, endet das Spiel für alle.
-- Spielleiter-Logik läuft auf dem Gerät des Gastgebers; ein manipulierter Client des Gastgebers könnte Rollen auslesen (für ein Partyspiel unter Freunden üblich; für öffentliche Lobbys wäre eine Cloud Function als Spielleiter nötig).
+- Spielleiter-Logik läuft auf dem Gerät des Gastgebers; ein manipulierter Client des Gastgebers könnte Rollen auslesen (für ein Partyspiel unter Freunden üblich).
+- Wer den Dorfcode kennt, kann den öffentlichen Spielstand mitlesen (nicht aber Rollen und Nachtaktionen).
 - Vollvermaschtes Video: Ab ~10 Spielern steigt die Last auf älteren Handys spürbar (Auflösung ist deshalb auf 480×360 @ 15 fps begrenzt).

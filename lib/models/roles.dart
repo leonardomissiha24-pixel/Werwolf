@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 enum Team { village, wolves, solo }
 
-/// Alle Rollen des Spiels. Die [id] wird in Firestore gespeichert.
+/// Alle Rollen des Spiels. Die [id] wird im Spielzustand übertragen.
 enum Role {
   werwolf(
     id: 'werwolf',

@@ -10,8 +10,8 @@
 <p>Die App nutzt Kamera und Mikrofon ausschließlich, damit sich die Mitspieler eines Spielraums während des Spiels sehen und hören können. Bild und Ton werden per WebRTC direkt und Ende-zu-Ende-verschlüsselt (DTLS-SRTP) zwischen den Geräten übertragen. Sie werden <strong>weder aufgezeichnet noch auf unseren Servern gespeichert</strong>. Falls ein TURN-Relay-Server benötigt wird, leitet dieser nur verschlüsselte Datenpakete weiter und kann sie nicht entschlüsseln.</p>
 
 <h2>2. Spieldaten</h2>
-<p>Für den Spielablauf wird Google Firebase (Google Ireland Ltd.) genutzt: Firebase Authentication (anonyme Anmeldung, keine E-Mail, kein Name) und Cloud Firestore. Gespeichert werden der von dir gewählte Spielername, eine zufällige Nutzerkennung, der Raumcode, Spielrollen, Abstimmungen und technische Verbindungsdaten (WebRTC-Signalisierung). Diese Daten werden nach spätestens 24 Stunden automatisch gelöscht.</p>
-<p>Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Bereitstellung des Spiels). Firebase kann Daten auch in den USA verarbeiten; Google ist unter dem EU-US Data Privacy Framework zertifiziert.</p>
+<p>Die App benötigt kein Benutzerkonto. Auf deinem Gerät wird eine zufällige Kennung und dein gewählter Spielername gespeichert. Während eines Spiels werden Spielername, Kennung, Spielstand, Abstimmungen und technische Verbindungsdaten (WebRTC-Signalisierung) zwischen den Geräten der Mitspieler ausgetauscht. Der Austausch läuft über öffentliche MQTT-Vermittlungsserver (derzeit broker.emqx.io, broker.hivemq.com, test.mosquitto.org). Alle Inhalte werden vorher auf dem Gerät verschlüsselt (AES-256-GCM); die Betreiber dieser Server können sie nicht lesen, sehen aber technisch bedingt deine IP-Adresse. Wir selbst betreiben keinen Server und speichern keine Daten.</p>
+<p>Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Bereitstellung des Spiels).</p>
 
 <h2>3. Sprachausgabe</h2>
 <p>Die Erzählerstimme nutzt die Text-to-Speech-Funktion deines Geräts. Es werden keine Daten an uns übertragen.</p>

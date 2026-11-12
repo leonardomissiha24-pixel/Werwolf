@@ -1,13 +1,11 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'firebase_options.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'services/room_repository.dart';
 import 'theme.dart';
 import 'ui/screens/home_screen.dart';
-
-const kServerNotConfigured = 'SERVER_NOT_CONFIGURED';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,24 +19,19 @@ Future<void> main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
-  String? initError;
-  final setupMissing = DefaultFirebaseOptions.currentPlatform.projectId == 'dein-firebase-projekt';
-  if (setupMissing) {
-    initError = kServerNotConfigured;
-  } else {
-    try {
-      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-      await RoomRepository.instance.ensureSignedIn();
-    } catch (e) {
-      initError = '$e';
-    }
+  // Jedes Gerät bekommt einmalig eine zufällige Kennung (kein Konto nötig).
+  final prefs = await SharedPreferences.getInstance();
+  var uid = prefs.getString('uid');
+  if (uid == null) {
+    uid = RoomRepository.randomId();
+    await prefs.setString('uid', uid);
   }
-  runApp(WerwolfApp(initError: initError));
+  RoomRepository.instance = RoomRepository(uid: uid);
+  runApp(const WerwolfApp());
 }
 
 class WerwolfApp extends StatelessWidget {
-  const WerwolfApp({super.key, this.initError});
-  final String? initError;
+  const WerwolfApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +41,7 @@ class WerwolfApp extends StatelessWidget {
       theme: buildTheme(),
       darkTheme: buildTheme(),
       themeMode: ThemeMode.dark,
-      home: HomeScreen(initError: initError),
+      home: const HomeScreen(),
     );
   }
 }

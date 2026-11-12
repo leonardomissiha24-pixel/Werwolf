@@ -30,7 +30,7 @@ class RoomScreen extends StatefulWidget {
 class _RoomScreenState extends State<RoomScreen> {
   final repo = RoomRepository.instance;
   late final String me = repo.uid;
-  late final VideoMesh mesh = VideoMesh(code: widget.code, me: me);
+  late final VideoMesh mesh = VideoMesh(me: me, signals: repo.signals, sendSignal: repo.sendSignal);
   final narrator = Narrator();
   GameEngine? engine;
 
@@ -252,7 +252,7 @@ class _RoomScreenState extends State<RoomScreen> {
     setState(() => _starting = true);
     try {
       engine?.dispose();
-      engine = GameEngine(widget.code);
+      engine = GameEngine(repo.hostStore!);
       await engine!.start(players, v.room);
     } catch (e) {
       if (mounted) {
@@ -266,7 +266,7 @@ class _RoomScreenState extends State<RoomScreen> {
   Future<void> _newGame() async {
     engine?.dispose();
     engine = null;
-    await GameEngine.resetToLobby(widget.code);
+    repo.hostStore?.resetToLobby();
   }
 
   Future<bool> _confirmLeave() async {
@@ -307,6 +307,7 @@ class _RoomScreenState extends State<RoomScreen> {
     narrator.stop();
     mesh.removeListener(_rebuild);
     mesh.dispose();
+    repo.leaveRoom(widget.code, isHost: room?.hostId == me, inLobby: !(room?.inGame ?? false));
     WakelockPlus.disable();
     super.dispose();
   }

@@ -10,8 +10,7 @@ import 'room_screen.dart';
 import 'rules_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.initError});
-  final String? initError;
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -67,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       await Navigator.of(context).push(_fade(RoomScreen(code: code)));
     } catch (e) {
-      _toast('Fehler: $e');
+      _toast(e is RoomException ? e.message : 'Fehler: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -137,21 +136,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: TextStyle(fontStyle: FontStyle.italic, color: AppColors.ash, fontSize: 18),
                     ),
                     const SizedBox(height: 44),
-                    if (widget.initError != null)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 18),
-                        decoration: BoxDecoration(border: Border.all(color: AppColors.blood)),
-                        child: Text(
-                          widget.initError == 'SERVER_NOT_CONFIGURED'
-                              ? 'Der Spielserver ist noch nicht eingerichtet.\n\n'
-                                  'Dein Internet funktioniert – in dieser Version fehlen nur noch die '
-                                  'Firebase-Zugangsdaten. Sobald sie eingetragen sind, kann gespielt werden.'
-                              : 'Keine Verbindung zum Spielserver. Prüfe deine Internetverbindung.\n\n'
-                                  '${widget.initError}',
-                          style: const TextStyle(color: AppColors.ash),
-                        ),
-                      ),
                     TextField(
                       controller: _name,
                       maxLength: 16,
@@ -163,14 +147,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     GothicButton(
                       label: 'Ein Dorf gründen',
                       icon: Icons.local_fire_department,
-                      onPressed: _busy || widget.initError != null ? null : _create,
+                      onPressed: _busy ? null : _create,
                     ),
                     const SizedBox(height: 12),
                     GothicButton(
                       label: 'Einem Dorf beitreten',
                       icon: Icons.door_front_door,
                       primary: false,
-                      onPressed: _busy || widget.initError != null ? null : _join,
+                      onPressed: _busy ? null : _join,
                     ),
                     const SizedBox(height: 12),
                     GothicButton(

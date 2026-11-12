@@ -14,6 +14,24 @@ permissions:
   contents: write
 
 jobs:
+  # Prüft, ob über die öffentlichen Vermittlungsserver aus lib/config.dart
+  # eine komplette Partie gespielt werden kann (blockiert den Build nicht).
+  vermittlungsserver:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.50.0
+          cache: true
+      - run: flutter pub get
+      - name: Partien über öffentliche Server
+        env:
+          WERWOLF_LIVE: '1'
+        run: flutter test test/network_test.dart --reporter expanded
+
   windows:
     runs-on: windows-latest
     steps:
@@ -29,7 +47,7 @@ jobs:
         run: flutter pub get
 
       - name: Spiellogik testen
-        run: flutter test test/engine_test.dart
+        run: flutter test test/engine_test.dart test/network_test.dart
 
       - name: Windows-App bauen
         run: flutter build windows --release

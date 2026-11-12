@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
@@ -40,16 +39,30 @@ class _Peer {
 }
 
 /// Vollvermaschtes WebRTC-Netz: jeder Spieler hat eine direkte Verbindung zu
-/// jedem anderen. Die Signalisierung läuft über Firestore
-/// (rooms/{code}/signals). Welche Bild-/Tonspur an wen geht, wird pro
+/// jedem anderen. Die Signalisierung läuft verschlüsselt über den Vermittlungsserver
+/// Welche Bild-/Tonspur an wen geht, wird pro
 /// Verbindung über [setSendPolicy] gesteuert – so sehen sich nachts nur die
 /// Werwölfe.
 class VideoMesh extends ChangeNotifier {
-  VideoMesh({required this.code, required this.me});
+  VideoMesh({
+    required this.me,
+    required Stream<Map<String, dynamic>> signals,
+    required this.sendSignal,
+  }) {
+    // Sofort zuhören: Signale, die vor dem Kamerastart eintreffen, werden gepuffert.
+    _signalSub = signals.listen((s) {
+      if (_started) {
+        _onSignal(s);
+      } else {
+        _early.add(s);
+      }
+    });
+  }
 
-  final String code;
   final String me;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final Future<void> Function(String to, Map<String, dynamic> data) sendSignal;
+  final List<Map<String, dynamic>> _early = [];
+  bool _started = false;
 
   final RTCVideoRenderer localRenderer = RTCVideoRenderer();
   MediaStream? _local;
@@ -58,15 +71,13 @@ class VideoMesh extends ChangeNotifier {
   MediaGate Function(String peer) _sendPolicy = (_) => MediaGate.full;
   MediaGate Function(String peer) _playPolicy = (_) => MediaGate.full;
   bool _disposed = false;
+  Map<String, String>? _pendingPlayers;
   int _sidCounter = 0;
 
   String? cameraError;
   bool micMuted = false;
   bool cameraOff = false;
   bool get hasLocalVideo => _local != null && _local!.getVideoTracks().isNotEmpty;
-
-  CollectionReference<Map<String, dynamic>> get _signals =>
-      _db.collection('rooms').doc(code).collection('signals');
 
   RTCVideoRenderer? rendererFor(String uid) {
     final p = _peers[uid];
@@ -97,25 +108,22 @@ class VideoMesh extends ChangeNotifier {
       await Helper.setSpeakerphoneOn(true);
     } catch (_) {}
 
-    // Alte Signale an mich wegräumen.
-    final old = await _signals.where('to', isEqualTo: me).get();
-    for (final d in old.docs) {
-      d.reference.delete();
+    _started = true;
+    for (final sig in _early) {
+      _onSignal(sig);
     }
-    _signalSub = _signals.where('to', isEqualTo: me).snapshots().listen((q) {
-      for (final c in q.docChanges) {
-        if (c.type != DocumentChangeType.added) continue;
-        final data = c.doc.data();
-        c.doc.reference.delete();
-        if (data != null) _onSignal(data);
-      }
-    });
+    _early.clear();
+    if (_pendingPlayers != null) syncPeers(_pendingPlayers!);
     notifyListeners();
   }
 
   /// Gleicht die Verbindungen mit der Spielerliste ab (uid -> stamp).
   void syncPeers(Map<String, String> players) {
     if (_disposed) return;
+    if (!_started) {
+      _pendingPlayers = players;
+      return;
+    }
     for (final uid in _peers.keys.toList()) {
       if (!players.containsKey(uid)) _closePeer(uid);
     }
@@ -245,6 +253,12 @@ class VideoMesh extends ChangeNotifier {
     final offer = await p.pc!.createOffer({});
     await p.pc!.setLocalDescription(offer);
     await _send(uid, {'type': 'offer', 'sid': sid, 'sdp': offer.sdp, 'sdpType': offer.type});
+    // Ging das Angebot verloren oder kommt keine Verbindung zustande: neu versuchen.
+    Future.delayed(const Duration(seconds: 15), () {
+      if (_disposed || _peers[uid] != p || p.connected) return;
+      _closePeer(uid);
+      _call(uid, stamp);
+    });
   }
 
   Future<void> _onSignal(Map<String, dynamic> s) async {
@@ -292,12 +306,7 @@ class VideoMesh extends ChangeNotifier {
     p.pendingCandidates.clear();
   }
 
-  Future<void> _send(String to, Map<String, dynamic> data) => _signals.add({
-        ...data,
-        'from': me,
-        'to': to,
-        'ts': DateTime.now().millisecondsSinceEpoch,
-      });
+  Future<void> _send(String to, Map<String, dynamic> data) => sendSignal(to, data);
 
   void _closePeer(String uid) {
     final p = _peers.remove(uid);
